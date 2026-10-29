@@ -1,7 +1,8 @@
-const API_BASE_URL = 'http://localhost:3000/api/auth';
+const API_ROOT = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const API_BASE_URL = `${API_ROOT}/api/auth`;
 
-// Keeps frontend working backend is down ===========================
-const FALLBACK_TO_MOCK_IF_BACKEND_OFFLINE = true;
+// Keeps the frontend usable when the backend is down, in DEV builds only.
+const FALLBACK_TO_MOCK_IF_BACKEND_OFFLINE = import.meta.env.DEV;
 
 const OFFLINE_USERS = {
   admin: {
@@ -22,7 +23,7 @@ const OFFLINE_USERS = {
   }
 };
 
-// ===================================================================
+const isNetworkError = (err) => err instanceof TypeError;
 
 export async function loginStaff(username, password) {
   try {
@@ -39,14 +40,17 @@ export async function loginStaff(username, password) {
     }
     return data.user;
   } catch (err) {
-    // If backend server isn't running and fallback is enabled
-    if (FALLBACK_TO_MOCK_IF_BACKEND_OFFLINE && err.message.includes('Failed to fetch')) {
+    // If backend server isn't running and fallback is enabled in dev
+    if (FALLBACK_TO_MOCK_IF_BACKEND_OFFLINE && isNetworkError(err)) {
       const cleanUser = username.trim().toLowerCase();
       if (OFFLINE_USERS[cleanUser] && password === 'password123') {
         localStorage.setItem('uc_offline_user', JSON.stringify(OFFLINE_USERS[cleanUser]));
         return OFFLINE_USERS[cleanUser];
       }
       throw new Error('Invalid username or password. (Offline Mock Mode)');
+    }
+    if (isNetworkError(err)) {
+      throw new Error('Unable to reach the server. Please try again.');
     }
     throw err;
   }
@@ -63,8 +67,12 @@ export async function fetchCurrentSession() {
     return data.user;
   } catch {
     if (FALLBACK_TO_MOCK_IF_BACKEND_OFFLINE) {
-      const saved = localStorage.getItem('uc_offline_user');
-      return saved ? JSON.parse(saved) : null;
+      try {
+        const saved = localStorage.getItem('uc_offline_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch {
+        return null;
+      }
     }
     return null;
   }
@@ -78,5 +86,6 @@ export async function logoutStaff() {
       credentials: 'include'
     });
   } catch {
+    // nothing to clear server-side
   }
 }
